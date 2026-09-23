@@ -1,26 +1,81 @@
 @import "tailwindcss";
 
+/*
+ * Token set derived from DESIGN.md (xAI-inspired: near-black canvas,
+ * white outline pills, hairline borders, no shadows). One addition not
+ * in the source system: --color-live, a green used only for the
+ * "squad overlap" signal — the one piece of UI that must read as a
+ * status light rather than brand chrome.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-canvas: #0a0a0a;
+  --color-canvas-soft: #1a1c20;
+  --color-canvas-card: #191919;
+  --color-canvas-mid: #363a3f;
+  --color-hairline: #212327;
+  --color-hairline-strong: rgba(255, 255, 255, 0.25);
+
+  --color-ink: #ffffff;
+  --color-ink-hover: #fafaf7;
+  --color-body: #dadbdf;
+  --color-mute: #7d8187;
+
+  --color-primary: #ffffff;
+  --color-on-primary: #0a0a0a;
+
+  --color-sunset: #ff7a17;
+  --color-sunset-soft: #ffc285;
+  --color-dusk: #7c3aed;
+  --color-twilight: #c4b5fd;
+  --color-breeze: #a0c3ec;
+  --color-midnight: #0d1726;
+
+  --color-live: #22c55e;
+  --color-live-soft: #16532f;
+
+  --radius-card: 8px;
+  --radius-pill: 9999px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-canvas: var(--color-canvas);
+  --color-canvas-soft: var(--color-canvas-soft);
+  --color-canvas-card: var(--color-canvas-card);
+  --color-canvas-mid: var(--color-canvas-mid);
+  --color-hairline: var(--color-hairline);
+  --color-hairline-strong: var(--color-hairline-strong);
+
+  --color-ink: var(--color-ink);
+  --color-ink-hover: var(--color-ink-hover);
+  --color-body: var(--color-body);
+  --color-mute: var(--color-mute);
+
+  --color-primary: var(--color-primary);
+  --color-on-primary: var(--color-on-primary);
+
+  --color-sunset: var(--color-sunset);
+  --color-sunset-soft: var(--color-sunset-soft);
+  --color-dusk: var(--color-dusk);
+  --color-twilight: var(--color-twilight);
+  --color-breeze: var(--color-breeze);
+  --color-midnight: var(--color-midnight);
+
+  --color-live: var(--color-live);
+  --color-live-soft: var(--color-live-soft);
+
+  --radius-card: var(--radius-card);
+  --radius-pill: var(--radius-pill);
+
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+::selection {
+  background: var(--color-ink);
+  color: var(--color-on-primary);
 }
