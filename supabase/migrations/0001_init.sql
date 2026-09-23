@@ -56,18 +56,37 @@ alter table public.members enable row level security;
 alter table public.slots enable row level security;
 alter table public.push_subscriptions enable row level security;
 
+-- Helper: a device's own squad ids, bypassing RLS internally (SECURITY
+-- DEFINER + owner privileges). Needed because a "members can see other
+-- members of their own squad" policy written as a plain self-join —
+-- `exists (select 1 from members me where me.squad_id = members.squad_id
+-- and me.user_id = auth.uid())` directly on the `members` table's own
+-- policy — makes Postgres re-apply that same policy to the inner
+-- reference, which re-applies it again, and so on: "infinite recursion
+-- detected in policy for relation members". Routing the lookup through
+-- this function breaks the cycle, since the function reads the table as
+-- its owner and never re-triggers RLS. See:
+-- https://supabase.com/docs/guides/database/postgres/row-level-security#emulating-permissive-policies
+create or replace function public.my_squad_ids()
+returns setof uuid
+language sql
+security definer
+set search_path = ''
+stable
+as $$
+  select squad_id from public.members where user_id = (select auth.uid());
+$$;
+
+revoke all on function public.my_squad_ids() from public;
+grant execute on function public.my_squad_ids() to anon, authenticated;
+
 -- squads: readable/writable only once you're already a member. Discovery
 -- of a squad by invite code goes through get_squad_by_invite_code()
 -- below (SECURITY DEFINER), so an unauthenticated visitor never gets
 -- direct table access to squads they haven't joined.
 create policy "members can read their squad"
   on public.squads for select
-  using (
-    exists (
-      select 1 from public.members m
-      where m.squad_id = squads.id and m.user_id = auth.uid()
-    )
-  );
+  using (id in (select public.my_squad_ids()));
 
 create policy "any signed-in device can create a squad"
   on public.squads for insert
@@ -78,12 +97,7 @@ create policy "any signed-in device can create a squad"
 -- impersonate someone else joining).
 create policy "members can read their squad roster"
   on public.members for select
-  using (
-    exists (
-      select 1 from public.members me
-      where me.squad_id = members.squad_id and me.user_id = auth.uid()
-    )
-  );
+  using (squad_id in (select public.my_squad_ids()));
 
 create policy "a device can add itself as a member"
   on public.members for insert
@@ -98,12 +112,7 @@ create policy "a member can update their own row"
 -- only as themselves (member_id must map back to their own membership row).
 create policy "members can read their squad's slots"
   on public.slots for select
-  using (
-    exists (
-      select 1 from public.members m
-      where m.squad_id = slots.squad_id and m.user_id = auth.uid()
-    )
-  );
+  using (squad_id in (select public.my_squad_ids()));
 
 create policy "members can post slots as themselves"
   on public.slots for insert
@@ -151,7 +160,8 @@ create or replace function public.get_squad_by_invite_code(code text)
 returns table (id uuid, name text)
 language sql
 security definer
-set search_path = public
+set search_path = ''
+stable
 as $$
   select s.id, s.name
   from public.squads s
@@ -179,7 +189,7 @@ create or replace function public.purge_expired_slots()
 returns void
 language sql
 security definer
-set search_path = public
+set search_path = ''
 as $$
   delete from public.slots where ends_at < now() - interval '1 day';
 $$;
