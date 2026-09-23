@@ -22,13 +22,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Type check
-        run: npx tsc --noEmit
-
       - name: Unit tests
         run: npm run test
 
       - name: Build
+        # No separate `tsc --noEmit` step: Next.js's typed-routes globals
+        # (LayoutProps, PageProps, ...) only exist once `next build`/`dev`
+        # has generated .next/types, so a standalone tsc pass on a clean
+        # checkout fails before that exists. `next build` already runs a
+        # full TypeScript check as part of its own pipeline.
+        #
         # No Supabase env vars in CI on purpose: only / is statically
         # prerendered, so the build must succeed without them. If it
         # ever starts requiring real credentials, that's a sign a page
