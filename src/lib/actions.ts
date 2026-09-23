@@ -24,15 +24,19 @@ export async function createSquad(formData: FormData) {
   const supabase = await createClient();
   const code = inviteCode();
 
-  const { data, error } = await supabase
+  // Deliberately not chaining .select().single() here: the "squads"
+  // SELECT RLS policy only allows members to read a squad, and the
+  // creator isn't a member yet (that happens in the /join step right
+  // after this redirect). Selecting the row back would hit the RLS gap
+  // and come back empty, which supabase-js turns into a thrown error —
+  // we already have the invite code locally, so there's nothing to read.
+  const { error } = await supabase
     .from("squads")
-    .insert({ name: parsed.data.name, invite_code: code })
-    .select("invite_code")
-    .single();
+    .insert({ name: parsed.data.name, invite_code: code });
 
   if (error) throw new Error(error.message);
 
-  redirect(`/s/${data.invite_code}/join`);
+  redirect(`/s/${code}/join`);
 }
 
 const joinSquadSchema = z.object({
