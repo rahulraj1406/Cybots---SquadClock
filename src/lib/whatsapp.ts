@@ -44,6 +44,34 @@ export function buildWhatsappMessage(input: {
   return `${header}${noteLine}\n\n${body}\n\nJoin the squad: ${inviteUrl}`;
 }
 
+/** Builds the share message for an overlap window (see OverlapBanner). */
+export function buildOverlapMessage(input: {
+  starts_at: string;
+  ends_at: string;
+  members: Pick<Member, "id" | "display_name" | "timezone">[];
+  totalMemberCount: number;
+  inviteUrl: string;
+}): string {
+  const { starts_at, ends_at, members, totalMemberCount, inviteUrl } = input;
+  const isFull = members.length === totalMemberCount;
+
+  const header = isFull
+    ? `🎮 All ${totalMemberCount} of us are free at the same time!`
+    : `🎮 ${members.length} of ${totalMemberCount} are free at the same time`;
+
+  const body = members
+    .map(
+      (m) =>
+        `${m.display_name}: ${formatLocalDate(starts_at, m.timezone)} ${formatLocalTime(
+          starts_at,
+          m.timezone,
+        )}–${formatLocalTime(ends_at, m.timezone)} (${m.timezone})`,
+    )
+    .join("\n");
+
+  return `${header}\n\n${body}\n\nJoin the squad: ${inviteUrl}`;
+}
+
 export function whatsappShareUrl(message: string): string {
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
