@@ -4,20 +4,21 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Input } from "@/components/ui";
 
-/** Accepts either a raw invite code ("abc123") or a full invite link. */
-function extractCode(input: string): string | null {
+/**
+ * Accepts a raw invite code ("abc123"), a full invite link, or a link
+ * without the scheme ("squadclock.vercel.app/s/abc123"). Codes are
+ * generated lowercase, so the result is lowercased too, since phones
+ * love to auto-capitalise the first letter of a pasted or typed code.
+ */
+export function extractCode(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  try {
-    const url = new URL(trimmed);
-    const match = url.pathname.match(/\/s\/([^/]+)/);
-    if (match) return match[1];
-  } catch {
-    // Not a URL — treat the raw input as the code.
-  }
+  const fromPath = trimmed.match(/\/s\/([A-Za-z0-9]+)/);
+  if (fromPath) return fromPath[1].toLowerCase();
 
-  return trimmed.replace(/^\/+|\/+$/g, "");
+  const bare = trimmed.replace(/^\/+|\/+$/g, "");
+  return /^[A-Za-z0-9]+$/.test(bare) ? bare.toLowerCase() : null;
 }
 
 export function JoinByCodeForm() {
@@ -29,7 +30,7 @@ export function JoinByCodeForm() {
     e.preventDefault();
     const code = extractCode(value);
     if (!code) {
-      setError("Paste an invite link or code");
+      setError("That doesn't look like an invite link or code");
       return;
     }
     router.push(`/s/${code}`);

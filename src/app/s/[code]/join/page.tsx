@@ -8,7 +8,11 @@ export default async function JoinPage({
 }: {
   params: Promise<{ code: string }>;
 }) {
-  const { code } = await params;
+  const { code: rawCode } = await params;
+  // Invite codes are generated lowercase; phones auto-capitalise them.
+  const code = rawCode.toLowerCase();
+  if (code !== rawCode) redirect(`/s/${code}/join`);
+
   const squad = await getSquadByInviteCode(code);
   if (!squad) notFound();
 

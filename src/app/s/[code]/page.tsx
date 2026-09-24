@@ -7,7 +7,11 @@ export default async function SquadPage({
 }: {
   params: Promise<{ code: string }>;
 }) {
-  const { code } = await params;
+  const { code: rawCode } = await params;
+  // Invite codes are generated lowercase; phones auto-capitalise them.
+  const code = rawCode.toLowerCase();
+  if (code !== rawCode) redirect(`/s/${code}`);
+
   const squad = await getSquadByInviteCode(code);
   if (!squad) notFound();
 
