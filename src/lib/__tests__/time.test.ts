@@ -4,6 +4,9 @@ import {
   absoluteSlotToUtc,
   formatCountdown,
   formatLocalTime,
+  formatSlotRange,
+  formatSlotStatus,
+  formatZoneLabel,
   isSlotExpired,
   isValidTimezone,
   relativeSlotToUtc,
@@ -108,5 +111,81 @@ describe("isValidTimezone / isSlotExpired", () => {
     const now = DateTime.fromISO("2026-03-01T00:00:00Z", { zone: "utc" });
     expect(isSlotExpired("2026-02-28T00:00:00Z", now)).toBe(true);
     expect(isSlotExpired("2026-03-02T00:00:00Z", now)).toBe(false);
+  });
+});
+
+describe("formatSlotRange", () => {
+  it("names the day once and the meridiem once for a same-day slot", () => {
+    expect(
+      formatSlotRange("2026-09-24T12:16:00Z", "2026-09-24T13:16:00Z", "Europe/Dublin"),
+    ).toBe("Thu, Sep 24 · 1:16–2:16 PM");
+  });
+
+  it("keeps both meridiems when the slot crosses noon", () => {
+    expect(
+      formatSlotRange("2026-09-24T10:00:00Z", "2026-09-24T12:00:00Z", "Europe/Dublin"),
+    ).toBe("Thu, Sep 24 · 11:00 AM–1:00 PM");
+  });
+
+  it("names the end day when the slot crosses midnight in that zone", () => {
+    // 22:00-01:00 in Dublin (IST, UTC+1 in September)
+    expect(
+      formatSlotRange("2026-09-24T21:00:00Z", "2026-09-25T00:00:00Z", "Europe/Dublin"),
+    ).toBe("Thu, Sep 24 · 10:00 PM – Fri 1:00 AM");
+  });
+
+  it("renders the same instant differently per zone", () => {
+    const [s, e] = ["2026-09-24T12:00:00Z", "2026-09-24T14:00:00Z"];
+    expect(formatSlotRange(s, e, "Asia/Kolkata")).toBe("Thu, Sep 24 · 5:30–7:30 PM");
+    expect(formatSlotRange(s, e, "America/Toronto")).toBe("Thu, Sep 24 · 8:00–10:00 AM");
+  });
+});
+
+describe("formatSlotStatus", () => {
+  const now = DateTime.fromISO("2026-09-24T12:00:00Z", { zone: "utc" });
+
+  it("counts down to an upcoming slot", () => {
+    expect(formatSlotStatus("2026-09-24T15:30:00Z", "2026-09-24T17:00:00Z", now)).toEqual({
+      live: false,
+      label: "in 3h 30m",
+    });
+  });
+
+  it("says a slot in progress is live and how long is left", () => {
+    expect(formatSlotStatus("2026-09-24T11:00:00Z", "2026-09-24T12:45:00Z", now)).toEqual({
+      live: true,
+      label: "free now · 45m left",
+    });
+    expect(formatSlotStatus("2026-09-24T11:00:00Z", "2026-09-24T14:10:00Z", now)).toEqual({
+      live: true,
+      label: "free now · 2h 10m left",
+    });
+  });
+});
+
+describe("formatZoneLabel", () => {
+  it("shows a readable city and the current UTC offset", () => {
+    const at = DateTime.fromISO("2026-09-24T12:00:00Z");
+    expect(formatZoneLabel("Asia/Kolkata", at)).toBe("Kolkata · GMT+5:30");
+    expect(formatZoneLabel("America/Toronto", at)).toBe("Toronto · GMT-4");
+    expect(formatZoneLabel("America/Argentina/Buenos_Aires", at)).toBe("Buenos Aires · GMT-3");
+  });
+
+  it("maps legacy aliases browsers still report to today's name", () => {
+    const at = DateTime.fromISO("2026-09-24T12:00:00Z");
+    expect(formatZoneLabel("Asia/Calcutta", at)).toBe("Kolkata · GMT+5:30");
+  });
+
+  it("follows daylight saving: Dublin is GMT+1 in summer, GMT in winter", () => {
+    expect(formatZoneLabel("Europe/Dublin", DateTime.fromISO("2026-07-01T12:00:00Z"))).toBe(
+      "Dublin · GMT+1",
+    );
+    expect(formatZoneLabel("Europe/Dublin", DateTime.fromISO("2026-12-01T12:00:00Z"))).toBe(
+      "Dublin · GMT",
+    );
+  });
+
+  it("labels UTC plainly", () => {
+    expect(formatZoneLabel("UTC")).toBe("UTC");
   });
 });

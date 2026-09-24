@@ -7,9 +7,30 @@ import { DateTime, IANAZone } from "luxon";
  * section 5 ("store UTC, display local") for why offsets are never stored.
  */
 
+/**
+ * Old IANA names that browsers (Chrome/ICU in particular) still report
+ * instead of the current ones. They are valid links to the same zone
+ * rules; mapping them just keeps names consistent across the squad.
+ */
+const LEGACY_ZONE_NAMES: Record<string, string> = {
+  "Asia/Calcutta": "Asia/Kolkata",
+  "Asia/Katmandu": "Asia/Kathmandu",
+  "Asia/Rangoon": "Asia/Yangon",
+  "Asia/Saigon": "Asia/Ho_Chi_Minh",
+  "Europe/Kiev": "Europe/Kyiv",
+  "Atlantic/Faeroe": "Atlantic/Faroe",
+  "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+  "Pacific/Truk": "Pacific/Chuuk",
+  "Pacific/Ponape": "Pacific/Pohnpei",
+};
+
+export function canonicalTimezone(tz: string): string {
+  return LEGACY_ZONE_NAMES[tz] ?? tz;
+}
+
 export function detectTimezone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    return canonicalTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   } catch {
     return "UTC";
   }
@@ -42,6 +63,65 @@ export function formatLocalDate(isoUtc: string, timezone: string): string {
   return DateTime.fromISO(isoUtc, { zone: "utc" })
     .setZone(timezone)
     .toFormat("ccc, LLL d");
+}
+
+/**
+ * "Thu, Sep 24 · 1:16–2:16 PM" in the given zone: the day is named once,
+ * and so is AM/PM when both ends share it. A slot that crosses midnight
+ * in that zone names the end day too: "Thu, Sep 24 · 10:00 PM – Fri 1:00 AM".
+ */
+export function formatSlotRange(startIso: string, endIso: string, timezone: string): string {
+  const start = DateTime.fromISO(startIso, { zone: "utc" }).setZone(timezone);
+  const end = DateTime.fromISO(endIso, { zone: "utc" }).setZone(timezone);
+  const day = start.toFormat("ccc, LLL d");
+
+  if (!start.hasSame(end, "day")) {
+    return `${day} · ${start.toFormat("h:mm a")} – ${end.toFormat("ccc h:mm a")}`;
+  }
+  if (start.toFormat("a") === end.toFormat("a")) {
+    return `${day} · ${start.toFormat("h:mm")}–${end.toFormat("h:mm a")}`;
+  }
+  return `${day} · ${start.toFormat("h:mm a")}–${end.toFormat("h:mm a")}`;
+}
+
+/**
+ * Status for a slot on the board: a countdown while it's upcoming
+ * ("in 3h 30m"), and "free now · 45m left" once it has started, which is
+ * when people actually need to see it.
+ */
+export function formatSlotStatus(
+  startIso: string,
+  endIso: string,
+  now: DateTime = DateTime.utc(),
+): { live: boolean; label: string } {
+  const start = DateTime.fromISO(startIso, { zone: "utc" });
+  if (start > now) return { live: false, label: formatCountdown(startIso, now) };
+
+  const left = DateTime.fromISO(endIso, { zone: "utc" })
+    .diff(now, ["hours", "minutes"])
+    .toObject();
+  const hours = Math.trunc(left.hours ?? 0);
+  const minutes = Math.trunc(left.minutes ?? 0);
+  const remaining = hours > 0 ? `${hours}h ${minutes}m` : `${Math.max(minutes, 1)}m`;
+  return { live: true, label: `free now · ${remaining} left` };
+}
+
+/**
+ * "Kolkata · GMT+5:30": a readable city plus the zone's offset at `at`
+ * (so Dublin shows GMT+1 in summer and GMT in winter).
+ */
+export function formatZoneLabel(timezone: string, at: DateTime = DateTime.utc()): string {
+  const zone = canonicalTimezone(timezone);
+  if (zone === "UTC" || zone === "Etc/UTC") return "UTC";
+
+  const city = zone.split("/").pop()!.replace(/_/g, " ");
+  const offset = at.setZone(zone).offset; // minutes east of UTC
+  if (offset === 0) return `${city} · GMT`;
+
+  const sign = offset > 0 ? "+" : "-";
+  const h = Math.floor(Math.abs(offset) / 60);
+  const m = Math.abs(offset) % 60;
+  return `${city} · GMT${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""}`;
 }
 
 /**
