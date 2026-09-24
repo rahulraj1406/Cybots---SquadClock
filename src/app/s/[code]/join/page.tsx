@@ -30,11 +30,9 @@ export default async function JoinPage({
 }: {
   params: Promise<{ code: string }>;
 }) {
-  const { code: rawCode } = await params;
-  // Invite codes are generated lowercase; phones auto-capitalise them.
-  const code = rawCode.toLowerCase();
-  if (code !== rawCode) redirect(`/s/${code}/join`);
-
+  const { code } = await params;
+  // The layout lowercases the code and 404s unknown ones before anything
+  // streams; this cached re-check only guards against rendering early.
   const squad = await getSquadByInviteCode(code);
   if (!squad) notFound();
 
