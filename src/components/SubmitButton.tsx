@@ -12,12 +12,14 @@ import { Button } from "@/components/ui";
 export function SubmitButton({
   children,
   pendingLabel,
+  disabled,
   ...props
 }: ComponentProps<typeof Button> & { pendingLabel?: string }) {
   const { pending } = useFormStatus();
+  const isDisabled = pending || Boolean(disabled);
 
   return (
-    <Button type="submit" disabled={pending} aria-disabled={pending} {...props}>
+    <Button type="submit" {...props} disabled={isDisabled} aria-disabled={isDisabled}>
       {pending && pendingLabel ? pendingLabel : children}
     </Button>
   );
