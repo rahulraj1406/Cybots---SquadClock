@@ -26,6 +26,10 @@ const redirectMock = vi.fn((url: string) => {
 });
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+const afterMock = vi.fn();
+vi.mock("next/server", () => ({ after: afterMock }));
+const notifyMock = vi.fn();
+vi.mock("@/lib/push/send", () => ({ notifyAboutNewSlot: notifyMock }));
 
 const { createSquad, createSlot, deleteSlot, joinSquad } = await import("../actions");
 
@@ -254,6 +258,48 @@ describe("createSlot", () => {
     );
 
     expect(state.error).toMatch(/rejoin/);
+  });
+});
+
+describe("createSlot push notifications", () => {
+  const fields = {
+    squadId: "8a6e0804-2bd0-4672-b79d-d97027f9071a",
+    memberId: "5f1c7a44-0c5d-4b8e-9f43-2f7f0b0a8c11",
+    inviteCode: "abcd2345",
+    mode: "relative",
+    startInHours: "0",
+    durationHours: "2",
+  };
+
+  beforeEach(() => {
+    afterMock.mockReset();
+    notifyMock.mockReset();
+    insertMock.mockResolvedValue({ error: null });
+    fromMock.mockImplementation(() => ({ insert: insertMock }) as never);
+  });
+
+  it("doesn't schedule notifications when push isn't configured", async () => {
+    await createSlot(initialState, formData(fields));
+    expect(afterMock).not.toHaveBeenCalled();
+  });
+
+  it("notifies the squad after the response, about the slot it just saved", async () => {
+    vi.stubEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY", "pub");
+    vi.stubEnv("VAPID_PRIVATE_KEY", "priv");
+    vi.stubEnv("VAPID_SUBJECT", "mailto:me@example.com");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service");
+
+    const state = await createSlot(initialState, formData(fields));
+    expect(state.error).toBeNull();
+    expect(notifyMock).not.toHaveBeenCalled(); // deferred, not inline
+
+    afterMock.mock.calls[0][0]();
+    expect(notifyMock).toHaveBeenCalledWith({
+      slotId: insertMock.mock.calls[0][0].id,
+      squadId: fields.squadId,
+      boardPath: "/s/abcd2345",
+    });
+    vi.unstubAllEnvs();
   });
 });
 

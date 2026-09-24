@@ -1,11 +1,15 @@
 "use server";
 
 import { customAlphabet } from "nanoid";
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getOrCreateUser } from "@/lib/supabase/auth";
+import { getPushConfig, isAllowedPushEndpoint } from "@/lib/push/config";
+import { notifyAboutNewSlot } from "@/lib/push/send";
 import { absoluteSlotToUtc, isValidTimezone, relativeSlotToUtc } from "@/lib/time";
 import type { ActionState } from "@/lib/types";
 
@@ -195,7 +199,11 @@ export async function createSlot(
   }
 
   const supabase = await createClient();
+  // Id generated here so the notification step can reference the slot
+  // without reading the row back.
+  const slotId = randomUUID();
   const { error } = await supabase.from("slots").insert({
+    id: slotId,
     squad_id: parsed.data.squadId,
     member_id: parsed.data.memberId,
     starts_at: bounds.starts_at,
@@ -212,6 +220,12 @@ export async function createSlot(
       };
     }
     return { error: `Couldn't save the slot: ${error.message}` };
+  }
+
+  if (getPushConfig()) {
+    const { squadId, inviteCode } = parsed.data;
+    // After the response: the poster never waits on push services.
+    after(() => notifyAboutNewSlot({ slotId, squadId, boardPath: `/s/${inviteCode}` }));
   }
 
   revalidatePath(`/s/${parsed.data.inviteCode}`);
@@ -241,5 +255,69 @@ export async function deleteSlot(
   }
 
   revalidatePath(`/s/${parsed.data.inviteCode}`);
+  return { error: null };
+}
+
+const pushSubscriptionSchema = z.object({
+  memberId: z.string().uuid(),
+  endpoint: z.string().url().refine(isAllowedPushEndpoint, "Unsupported push service"),
+  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+});
+
+/**
+ * Stores this device's Web Push subscription for its membership. RLS
+ * ("members can manage their own push subscriptions") makes sure the
+ * member row really belongs to the caller.
+ */
+export async function savePushSubscription(input: {
+  memberId: string;
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}): Promise<ActionState> {
+  if (!getPushConfig()) return { error: "Notifications aren't set up on this server." };
+
+  const parsed = pushSubscriptionSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+  const row = {
+    member_id: parsed.data.memberId,
+    endpoint: parsed.data.endpoint,
+    p256dh: parsed.data.keys.p256dh,
+    auth: parsed.data.keys.auth,
+  };
+
+  const { error: insertError } = await supabase.from("push_subscriptions").insert(row);
+  let error = insertError;
+  if (insertError?.code === UNIQUE_VIOLATION) {
+    // Same device re-subscribing: refresh its keys.
+    ({ error } = await supabase
+      .from("push_subscriptions")
+      .update({ p256dh: row.p256dh, auth: row.auth })
+      .eq("member_id", row.member_id)
+      .eq("endpoint", row.endpoint));
+  }
+
+  if (error) {
+    console.error("savePushSubscription failed", error);
+    return { error: "Couldn't turn on notifications. Please try again." };
+  }
+  return { error: null };
+}
+
+export async function deletePushSubscription(input: {
+  memberId: string;
+  endpoint: string;
+}): Promise<ActionState> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("push_subscriptions")
+    .delete()
+    .eq("member_id", input.memberId)
+    .eq("endpoint", input.endpoint);
+  if (error) {
+    console.error("deletePushSubscription failed", error);
+    return { error: "Couldn't turn off notifications. Please try again." };
+  }
   return { error: null };
 }
