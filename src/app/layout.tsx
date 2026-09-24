@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   title: "SquadClock",
   description:
     "Post 'free now for 2h', and your squad sees it in their own local time.",
+  applicationName: "SquadClock",
+  // iOS "Add to Home Screen": open full-screen like an app, with a dark
+  // status bar (not black-translucent, which would draw under content).
+  appleWebApp: { capable: true, title: "SquadClock", statusBarStyle: "black" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
