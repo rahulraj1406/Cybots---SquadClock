@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getOrCreateUser } from "@/lib/supabase/auth";
-import { absoluteSlotToUtc, relativeSlotToUtc } from "@/lib/time";
+import { absoluteSlotToUtc, isValidTimezone, relativeSlotToUtc } from "@/lib/time";
 import type { ActionState } from "@/lib/types";
 
 function errorMessage(e: unknown): string {
@@ -64,10 +64,20 @@ const joinSquadSchema = z.object({
   squadId: z.string().uuid(),
   inviteCode: z.string().min(1),
   displayName: z.string().trim().min(1, "Enter your name").max(40),
-  timezone: z.string().min(1, "Pick a timezone"),
+  // Validated against the IANA database, not just "non-empty": a bad zone
+  // name would be stored and then break every time conversion for this
+  // member on everyone else's board.
+  timezone: z
+    .string()
+    .trim()
+    .min(1, "Pick a time zone")
+    .refine(isValidTimezone, "That isn't a valid time zone (e.g. “Asia/Kolkata”)"),
 });
 
-export async function joinSquad(formData: FormData) {
+export async function joinSquad(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const parsed = joinSquadSchema.safeParse({
     squadId: formData.get("squadId"),
     inviteCode: formData.get("inviteCode"),
@@ -75,14 +85,18 @@ export async function joinSquad(formData: FormData) {
     timezone: formData.get("timezone"),
   });
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0].message);
+    return { error: parsed.error.issues[0].message };
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+
+  // A friend opening an invite link is usually a brand-new device.
+  let user;
+  try {
+    user = await getOrCreateUser(supabase);
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
 
   const { error } = await supabase.from("members").upsert(
     {
@@ -94,7 +108,10 @@ export async function joinSquad(formData: FormData) {
     { onConflict: "squad_id,user_id" },
   );
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("joinSquad: upsert failed", error);
+    return { error: `Couldn't join the squad: ${error.message}` };
+  }
 
   redirect(`/s/${parsed.data.inviteCode}`);
 }
