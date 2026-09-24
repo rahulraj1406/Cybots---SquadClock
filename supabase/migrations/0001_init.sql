@@ -1,6 +1,14 @@
 -- SquadClock schema: squads, members, slots, plus RLS so a device can
 -- only ever see/write data for squads it has actually joined.
 --
+-- Safe to re-run: every statement is idempotent (create ... if not
+-- exists / create or replace / drop policy if exists + create policy),
+-- so pasting this whole file into the Supabase SQL Editor again brings an
+-- existing project up to date instead of failing halfway through.
+--
+-- One setting can't be made in SQL and is required: Supabase dashboard ->
+-- Authentication -> Sign In / Providers -> "Allow anonymous sign-ins".
+--
 -- Identity model: every device signs in via Supabase anonymous auth
 -- (no passwords). auth.uid() is stable per device and is what RLS
 -- checks against — see docs/PROJECT.md section 3 ("Key decisions").
@@ -84,10 +92,12 @@ grant execute on function public.my_squad_ids() to anon, authenticated;
 -- of a squad by invite code goes through get_squad_by_invite_code()
 -- below (SECURITY DEFINER), so an unauthenticated visitor never gets
 -- direct table access to squads they haven't joined.
+drop policy if exists "members can read their squad" on public.squads;
 create policy "members can read their squad"
   on public.squads for select
   using (id in (select public.my_squad_ids()));
 
+drop policy if exists "any signed-in device can create a squad" on public.squads;
 create policy "any signed-in device can create a squad"
   on public.squads for insert
   with check (auth.uid() is not null);
@@ -95,14 +105,17 @@ create policy "any signed-in device can create a squad"
 -- members: a member can see everyone else in their own squad(s), and can
 -- insert only their own row (i.e. you can only add yourself as you, not
 -- impersonate someone else joining).
+drop policy if exists "members can read their squad roster" on public.members;
 create policy "members can read their squad roster"
   on public.members for select
   using (squad_id in (select public.my_squad_ids()));
 
+drop policy if exists "a device can add itself as a member" on public.members;
 create policy "a device can add itself as a member"
   on public.members for insert
   with check (user_id = auth.uid());
 
+drop policy if exists "a member can update their own row" on public.members;
 create policy "a member can update their own row"
   on public.members for update
   using (user_id = auth.uid())
@@ -110,10 +123,12 @@ create policy "a member can update their own row"
 
 -- slots: only members of a squad can read/write that squad's slots, and
 -- only as themselves (member_id must map back to their own membership row).
+drop policy if exists "members can read their squad's slots" on public.slots;
 create policy "members can read their squad's slots"
   on public.slots for select
   using (squad_id in (select public.my_squad_ids()));
 
+drop policy if exists "members can post slots as themselves" on public.slots;
 create policy "members can post slots as themselves"
   on public.slots for insert
   with check (
@@ -125,6 +140,7 @@ create policy "members can post slots as themselves"
     )
   );
 
+drop policy if exists "members can delete their own slots" on public.slots;
 create policy "members can delete their own slots"
   on public.slots for delete
   using (
@@ -135,6 +151,7 @@ create policy "members can delete their own slots"
   );
 
 -- push_subscriptions: a member manages only their own subscriptions.
+drop policy if exists "members can manage their own push subscriptions" on public.push_subscriptions;
 create policy "members can manage their own push subscriptions"
   on public.push_subscriptions for all
   using (
@@ -176,8 +193,22 @@ grant execute on function public.get_squad_by_invite_code(text) to anon, authent
 -- updates live without a refresh (see docs/PROJECT.md section 4).
 -- ---------------------------------------------------------------------
 
-alter publication supabase_realtime add table public.slots;
-alter publication supabase_realtime add table public.members;
+-- Guarded because "add table" errors if the table is already published,
+-- which would stop a re-run of this file halfway through.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['slots', 'members'] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end
+$$;
 
 -- ---------------------------------------------------------------------
 -- Housekeeping: callable by a daily cron (see docs/PROJECT.md "Later")
