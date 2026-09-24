@@ -2,10 +2,16 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Runs on every request. Refreshes the Supabase session cookie, and
- * bootstraps a brand-new visitor into an anonymous session so they have
- * a stable identity (auth.uid()) before they ever create or join a
- * squad — this is the "no passwords" decision from docs/PROJECT.md.
+ * Runs on every request and keeps an existing Supabase session fresh
+ * (rotating the access token cookie before it expires).
+ *
+ * It deliberately does NOT create sessions. Anonymous sign-in happens in
+ * the create/join Server Actions (see getOrCreateUser), so an identity is
+ * only minted when a person actually submits a form. Signing in here
+ * made a new anonymous user for every crawler and link-preview bot
+ * (WhatsApp fetches every shared invite link), ate into Supabase's
+ * per-IP anonymous sign-in rate limit, and silently swallowed the error
+ * when anonymous sign-ins were disabled.
  */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -31,13 +37,9 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    await supabase.auth.signInAnonymously();
-  }
+  // Don't remove: getUser() is what triggers the token refresh + cookie
+  // write above. It returns immediately when there are no auth cookies.
+  await supabase.auth.getUser();
 
   return response;
 }
