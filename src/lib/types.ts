@@ -35,3 +35,12 @@ export type OverlapWindow = {
   ends_at: string;
   memberIds: string[];
 };
+
+/**
+ * What a form's Server Action hands back to useActionState: null on
+ * success (or before the first submit), a human-readable message when
+ * something went wrong. Errors are returned rather than thrown because a
+ * thrown error's message is stripped in production builds and surfaces
+ * only as an opaque "Minified React error #441".
+ */
+export type ActionState = { error: string | null };

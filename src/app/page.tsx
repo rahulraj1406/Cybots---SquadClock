@@ -1,6 +1,6 @@
-import { createSquad } from "@/lib/actions";
+import { CreateSquadForm } from "@/components/CreateSquadForm";
 import { JoinByCodeForm } from "@/components/JoinByCodeForm";
-import { Button, Card, Eyebrow, Input } from "@/components/ui";
+import { Card, Eyebrow } from "@/components/ui";
 
 export default function Home() {
   return (
@@ -16,23 +16,7 @@ export default function Home() {
         </p>
 
         <Card className="mt-10">
-          <form action={createSquad} className="flex flex-col gap-4">
-            <div>
-              <label htmlFor="name" className="mb-2 block text-sm text-body">
-                Squad name
-              </label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="Brawl Stars crew"
-                required
-                maxLength={60}
-              />
-            </div>
-            <Button type="submit" variant="primary">
-              Create a squad
-            </Button>
-          </form>
+          <CreateSquadForm />
         </Card>
 
         <div className="mt-10 flex items-center gap-4 text-mute">

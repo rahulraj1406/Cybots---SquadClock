@@ -5,7 +5,13 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getOrCreateUser } from "@/lib/supabase/auth";
 import { absoluteSlotToUtc, relativeSlotToUtc } from "@/lib/time";
+import type { ActionState } from "@/lib/types";
+
+function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : "Something went wrong. Please try again.";
+}
 
 // Unambiguous alphabet (no 0/O/1/I/l) since invite codes get read aloud
 // and typed by hand as often as they get pasted from a link.
@@ -15,13 +21,25 @@ const createSquadSchema = z.object({
   name: z.string().trim().min(1, "Give your squad a name").max(60),
 });
 
-export async function createSquad(formData: FormData) {
+export async function createSquad(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const parsed = createSquadSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0].message);
+    return { error: parsed.error.issues[0].message };
   }
 
   const supabase = await createClient();
+
+  // The "squads" INSERT policy requires auth.uid(), so the device needs
+  // an identity before the insert — create one now if it's brand new.
+  try {
+    await getOrCreateUser(supabase);
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+
   const code = inviteCode();
 
   // Deliberately not chaining .select().single() here: the "squads"
@@ -34,7 +52,10 @@ export async function createSquad(formData: FormData) {
     .from("squads")
     .insert({ name: parsed.data.name, invite_code: code });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("createSquad: insert failed", error);
+    return { error: `Couldn't create the squad: ${error.message}` };
+  }
 
   redirect(`/s/${code}/join`);
 }

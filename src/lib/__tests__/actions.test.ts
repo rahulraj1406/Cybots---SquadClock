@@ -10,7 +10,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const insertMock = vi.fn();
 const fromMock = vi.fn(() => ({ insert: insertMock }));
-const supabaseMock = { from: fromMock };
+const getUserMock = vi.fn();
+const signInAnonymouslyMock = vi.fn();
+const supabaseMock = {
+  from: fromMock,
+  auth: { getUser: getUserMock, signInAnonymously: signInAnonymouslyMock },
+};
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(() => Promise.resolve(supabaseMock)),
@@ -30,17 +35,21 @@ function formData(fields: Record<string, string>) {
   return fd;
 }
 
+const initialState = { error: null };
+
 beforeEach(() => {
   insertMock.mockReset();
   fromMock.mockClear();
   redirectMock.mockClear();
+  getUserMock.mockReset().mockResolvedValue({ data: { user: { id: "u1" } } });
+  signInAnonymouslyMock.mockReset();
 });
 
 describe("createSquad", () => {
   it("redirects using the locally generated invite code, not a DB round-trip", async () => {
     insertMock.mockResolvedValue({ data: null, error: null });
 
-    await expect(createSquad(formData({ name: "Brawl Stars crew" }))).rejects.toThrow(
+    await expect(createSquad(initialState, formData({ name: "Brawl Stars crew" }))).rejects.toThrow(
       /^REDIRECT:/,
     );
 
@@ -58,22 +67,53 @@ describe("createSquad", () => {
     expect(insertMock).toHaveBeenCalledTimes(1);
   });
 
-  it("throws when the insert fails, without redirecting", async () => {
+  it("returns the error as form state when the insert fails, without redirecting", async () => {
     insertMock.mockResolvedValue({
       data: null,
       error: { message: "duplicate key value violates unique constraint" },
     });
+    vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(createSquad(formData({ name: "Brawl Stars crew" }))).rejects.toThrow(
-      /duplicate key/,
-    );
+    const state = await createSquad(initialState, formData({ name: "Brawl Stars crew" }));
+    expect(state.error).toMatch(/duplicate key/);
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it("rejects an empty squad name before touching the database", async () => {
-    await expect(createSquad(formData({ name: "  " }))).rejects.toThrow(
-      /Give your squad a name/,
-    );
+    const state = await createSquad(initialState, formData({ name: "  " }));
+    expect(state.error).toMatch(/Give your squad a name/);
     expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("signs a brand-new device in anonymously before inserting", async () => {
+    getUserMock.mockResolvedValue({ data: { user: null } });
+    signInAnonymouslyMock.mockResolvedValue({ data: { user: { id: "anon" } }, error: null });
+    insertMock.mockResolvedValue({ data: null, error: null });
+
+    await expect(
+      createSquad(initialState, formData({ name: "Brawl Stars crew" })),
+    ).rejects.toThrow(/^REDIRECT:/);
+
+    expect(signInAnonymouslyMock).toHaveBeenCalledTimes(1);
+    expect(signInAnonymouslyMock.mock.invocationCallOrder[0]).toBeLessThan(
+      insertMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  // Regression for the production bug: with anonymous sign-ins disabled
+  // the insert ran with no session, RLS rejected it, and the thrown error
+  // reached users only as "Minified React error #441".
+  it("explains the Supabase setting when anonymous sign-ins are disabled", async () => {
+    getUserMock.mockResolvedValue({ data: { user: null } });
+    signInAnonymouslyMock.mockResolvedValue({
+      data: { user: null },
+      error: { code: "anonymous_provider_disabled", message: "Anonymous sign-ins are disabled" },
+    });
+
+    const state = await createSquad(initialState, formData({ name: "Brawl Stars crew" }));
+
+    expect(state.error).toMatch(/Anonymous sign-ins are turned off/);
+    expect(insertMock).not.toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 });
