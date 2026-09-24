@@ -1,7 +1,29 @@
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentMember, getSquadByInviteCode } from "@/lib/squad";
 import { JoinForm } from "@/components/JoinForm";
 import { Card, Eyebrow } from "@/components/ui";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ code: string }>;
+}): Promise<Metadata> {
+  const { code } = await params;
+  const squad = await getSquadByInviteCode(code.toLowerCase());
+  if (!squad) return { title: "Squad not found · SquadClock" };
+
+  return {
+    title: `Join ${squad.name} · SquadClock`,
+    description: `Tap to join ${squad.name} and see when everyone's free, in your own time zone.`,
+    openGraph: {
+      title: `Join ${squad.name}`,
+      description: `Tap to join ${squad.name} and see when everyone's free, in your own time zone.`,
+    },
+    // Invite links are private to a squad; keep them out of search results.
+    robots: { index: false, follow: false },
+  };
+}
 
 export default async function JoinPage({
   params,

@@ -1,7 +1,13 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Member, Squad, SlotWithMember } from "@/lib/types";
 
-export async function getSquadByInviteCode(
+/**
+ * Wrapped in React's cache() so generateMetadata and the page itself
+ * share one lookup per request. It's an RPC (a POST), which Next.js's
+ * fetch memoization doesn't cover.
+ */
+export const getSquadByInviteCode = cache(async function getSquadByInviteCode(
   code: string,
 ): Promise<Pick<Squad, "id" | "name"> | null> {
   const supabase = await createClient();
@@ -9,9 +15,10 @@ export async function getSquadByInviteCode(
     .rpc("get_squad_by_invite_code", { code })
     .maybeSingle();
 
+  if (error) console.error("getSquadByInviteCode failed", error);
   if (error || !data) return null;
   return data as Pick<Squad, "id" | "name">;
-}
+});
 
 export async function getCurrentMember(squadId: string): Promise<Member | null> {
   const supabase = await createClient();
