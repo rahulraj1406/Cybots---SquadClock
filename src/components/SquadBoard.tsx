@@ -9,6 +9,7 @@ import type { Member, Slot, SlotWithMember } from "@/lib/types";
 import { OverlapBanner } from "@/components/OverlapBanner";
 import { MemberSlots } from "@/components/MemberSlots";
 import { AddSlotForm } from "@/components/AddSlotForm";
+import { NotificationsToggle } from "@/components/NotificationsToggle";
 import { Eyebrow } from "@/components/ui";
 
 export function SquadBoard({
@@ -19,6 +20,7 @@ export function SquadBoard({
   viewerTimezone,
   initialMembers,
   initialSlots,
+  vapidPublicKey,
 }: {
   squadName: string;
   squadId: string;
@@ -27,6 +29,8 @@ export function SquadBoard({
   viewerTimezone: string;
   initialMembers: Member[];
   initialSlots: SlotWithMember[];
+  /** Set only when the server has push notifications configured. */
+  vapidPublicKey: string | null;
 }) {
   const [members, setMembers] = useState(initialMembers);
   const [slots, setSlots] = useState(initialSlots);
@@ -188,6 +192,10 @@ export function SquadBoard({
               : "Invite friends"}
         </button>
       </header>
+
+      {vapidPublicKey && (
+        <NotificationsToggle memberId={currentMemberId} vapidPublicKey={vapidPublicKey} />
+      )}
 
       <OverlapBanner
         fullWindows={full}

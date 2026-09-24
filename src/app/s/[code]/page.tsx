@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentMember, getSquadBoardData, getSquadByInviteCode } from "@/lib/squad";
 import { SquadBoard } from "@/components/SquadBoard";
+import { getPushConfig } from "@/lib/push/config";
 
 export async function generateMetadata({
   params,
@@ -49,6 +50,7 @@ export default async function SquadPage({
       viewerTimezone={member.timezone}
       initialMembers={members}
       initialSlots={slots}
+      vapidPublicKey={getPushConfig()?.publicKey ?? null}
     />
   );
 }
