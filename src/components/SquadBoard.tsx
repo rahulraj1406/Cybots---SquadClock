@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { copyText, shareNative } from "@/lib/clipboard";
 import { findOverlaps, fullOverlaps, partialOverlaps } from "@/lib/overlap";
 import type { Member, Slot, SlotWithMember } from "@/lib/types";
 import { OverlapBanner } from "@/components/OverlapBanner";
@@ -45,7 +46,7 @@ export function SquadBoard({
     setSlots(initialSlots);
   }
   const [now, setNow] = useState(() => new Date());
-  const [inviteCopied, setInviteCopied] = useState(false);
+  const [inviteStatus, setInviteStatus] = useState<"idle" | "copied" | "failed">("idle");
 
   const membersRef = useRef(members);
   useEffect(() => {
@@ -157,23 +158,34 @@ export function SquadBoard({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-6 py-12">
-      <header className="flex items-center justify-between">
-        <div>
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <Eyebrow>Squad</Eyebrow>
-          <h1 className="mt-1 font-sans text-3xl tracking-[-0.02em] text-ink">
+          <h1 className="mt-1 break-words font-sans text-3xl tracking-[-0.02em] text-ink">
             {squadName}
           </h1>
         </div>
         <button
           type="button"
           onClick={async () => {
-            await navigator.clipboard.writeText(inviteUrl);
-            setInviteCopied(true);
-            setTimeout(() => setInviteCopied(false), 1500);
+            // Phones get the native share sheet (WhatsApp, Messages, ...);
+            // browsers without one fall back to copying the link.
+            const shared = await shareNative({
+              title: `Join ${squadName} on SquadClock`,
+              text: `Join ${squadName} on SquadClock so we can see when everyone's free:`,
+              url: inviteUrl,
+            });
+            if (shared !== "unsupported") return;
+            setInviteStatus((await copyText(inviteUrl)) ? "copied" : "failed");
+            setTimeout(() => setInviteStatus("idle"), 1500);
           }}
-          className="font-mono text-xs uppercase tracking-[1.2px] text-mute hover:text-body"
+          className="shrink-0 font-mono text-xs uppercase tracking-[1.2px] text-mute hover:text-body"
         >
-          {inviteCopied ? "Link copied" : "Copy invite link"}
+          {inviteStatus === "copied"
+            ? "Link copied"
+            : inviteStatus === "failed"
+              ? "Copy failed"
+              : "Invite friends"}
         </button>
       </header>
 
