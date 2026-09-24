@@ -1,5 +1,6 @@
 import { CreateSquadForm } from "@/components/CreateSquadForm";
 import { JoinByCodeForm } from "@/components/JoinByCodeForm";
+import { YourSquads } from "@/components/YourSquads";
 import { Card, Eyebrow } from "@/components/ui";
 
 export default function Home() {
@@ -14,6 +15,8 @@ export default function Home() {
           Everyone sees it in their own time zone. No more doing the math by
           hand.
         </p>
+
+        <YourSquads />
 
         <Card className="mt-10">
           <CreateSquadForm />
