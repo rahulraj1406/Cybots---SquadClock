@@ -121,8 +121,11 @@ const relativeSlotSchema = z.object({
   squadId: z.string().uuid(),
   memberId: z.string().uuid(),
   inviteCode: z.string().min(1),
-  startInHours: z.coerce.number().min(0).max(24 * 14),
-  durationHours: z.coerce.number().min(0.25).max(24),
+  startInHours: z.coerce.number().min(0, "Start can't be in the past").max(24 * 14),
+  durationHours: z.coerce
+    .number()
+    .min(0.25, "A slot needs to be at least 15 minutes")
+    .max(24, "A slot can be at most 24 hours"),
   note: z.string().trim().max(140).optional(),
 });
 
@@ -131,10 +134,13 @@ const absoluteSlotSchema = z.object({
   squadId: z.string().uuid(),
   memberId: z.string().uuid(),
   inviteCode: z.string().min(1),
-  dateISO: z.string().min(1),
-  timeHHmm: z.string().regex(/^\d{2}:\d{2}$/),
-  durationHours: z.coerce.number().min(0.25).max(24),
-  timezone: z.string().min(1),
+  dateISO: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+  timeHHmm: z.string().regex(/^\d{2}:\d{2}$/, "Pick a time"),
+  durationHours: z.coerce
+    .number()
+    .min(0.25, "A slot needs to be at least 15 minutes")
+    .max(24, "A slot can be at most 24 hours"),
+  timezone: z.string().refine(isValidTimezone, "Invalid time zone"),
   note: z.string().trim().max(140).optional(),
 });
 
@@ -143,17 +149,34 @@ const createSlotSchema = z.discriminatedUnion("mode", [
   absoluteSlotSchema,
 ]);
 
-export async function createSlot(formData: FormData) {
+/** Postgres error code for "new row violates row-level security policy". */
+const RLS_VIOLATION = "42501";
+
+export async function createSlot(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const raw = Object.fromEntries(formData.entries());
   const parsed = createSlotSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0].message);
+    return { error: parsed.error.issues[0].message };
   }
 
   const bounds =
     parsed.data.mode === "relative"
       ? relativeSlotToUtc(parsed.data)
       : absoluteSlotToUtc(parsed.data);
+
+  // e.g. "2026-02-30": Luxon yields an invalid DateTime whose toISO() is null.
+  if (!bounds.starts_at || !bounds.ends_at) {
+    return { error: "That date doesn't exist. Pick another one." };
+  }
+
+  // The board only shows slots that haven't ended, so a slot entirely in
+  // the past would be saved and then silently never appear.
+  if (Date.parse(bounds.ends_at) <= Date.now()) {
+    return { error: "That time has already passed. Pick a later date or time." };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase.from("slots").insert({
@@ -164,9 +187,19 @@ export async function createSlot(formData: FormData) {
     note: parsed.data.note || null,
   });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("createSlot: insert failed", error);
+    if (error.code === RLS_VIOLATION) {
+      return {
+        error:
+          "This device isn't signed in to the squad any more. Reload the page and rejoin.",
+      };
+    }
+    return { error: `Couldn't save the slot: ${error.message}` };
+  }
 
   revalidatePath(`/s/${parsed.data.inviteCode}`);
+  return { error: null };
 }
 
 const deleteSlotSchema = z.object({
@@ -174,16 +207,23 @@ const deleteSlotSchema = z.object({
   inviteCode: z.string().min(1),
 });
 
-export async function deleteSlot(formData: FormData) {
+export async function deleteSlot(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const parsed = deleteSlotSchema.safeParse({
     slotId: formData.get("slotId"),
     inviteCode: formData.get("inviteCode"),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) return { error: "Couldn't find that slot." };
 
   const supabase = await createClient();
   const { error } = await supabase.from("slots").delete().eq("id", parsed.data.slotId);
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("deleteSlot: delete failed", error);
+    return { error: `Couldn't remove the slot: ${error.message}` };
+  }
 
   revalidatePath(`/s/${parsed.data.inviteCode}`);
+  return { error: null };
 }

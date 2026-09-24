@@ -27,7 +27,7 @@ const redirectMock = vi.fn((url: string) => {
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-const { createSquad, joinSquad } = await import("../actions");
+const { createSquad, createSlot, deleteSlot, joinSquad } = await import("../actions");
 
 function formData(fields: Record<string, string>) {
   const fd = new FormData();
@@ -165,5 +165,90 @@ describe("joinSquad", () => {
     const state = await joinSquad(initialState, formData(validJoin));
     expect(state.error).toMatch(/permission denied/);
     expect(redirectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("createSlot", () => {
+  const base = {
+    squadId: "8a6e0804-2bd0-4672-b79d-d97027f9071a",
+    memberId: "5f1c7a44-0c5d-4b8e-9f43-2f7f0b0a8c11",
+    inviteCode: "abcd2345",
+    durationHours: "2",
+  };
+
+  beforeEach(() => {
+    insertMock.mockResolvedValue({ error: null });
+    fromMock.mockImplementation(() => ({ insert: insertMock }) as never);
+  });
+
+  it("saves 'free now for 2h' as UTC bounds two hours apart", async () => {
+    const state = await createSlot(
+      initialState,
+      formData({ ...base, mode: "relative", startInHours: "0" }),
+    );
+
+    expect(state.error).toBeNull();
+    const row = insertMock.mock.calls[0][0];
+    expect(Date.parse(row.ends_at) - Date.parse(row.starts_at)).toBe(2 * 3600_000);
+    expect(row.note).toBeNull();
+  });
+
+  it("refuses a slot that has already ended instead of saving an invisible row", async () => {
+    const state = await createSlot(
+      initialState,
+      formData({
+        ...base,
+        mode: "absolute",
+        dateISO: "2020-01-01",
+        timeHHmm: "08:00",
+        timezone: "Europe/Dublin",
+      }),
+    );
+
+    expect(state.error).toMatch(/already passed/);
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a date that doesn't exist", async () => {
+    const state = await createSlot(
+      initialState,
+      formData({
+        ...base,
+        mode: "absolute",
+        dateISO: "2099-02-30",
+        timeHHmm: "08:00",
+        timezone: "Europe/Dublin",
+      }),
+    );
+
+    expect(state.error).toMatch(/doesn't exist/);
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it("explains an RLS rejection in plain words", async () => {
+    insertMock.mockResolvedValue({ error: { code: "42501", message: "new row violates row-level security policy" } });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const state = await createSlot(
+      initialState,
+      formData({ ...base, mode: "relative", startInHours: "1" }),
+    );
+
+    expect(state.error).toMatch(/rejoin/);
+  });
+});
+
+describe("deleteSlot", () => {
+  it("returns an error instead of throwing when the delete fails", async () => {
+    const eqMock = vi.fn().mockResolvedValue({ error: { message: "boom" } });
+    fromMock.mockImplementation(() => ({ delete: () => ({ eq: eqMock }) }) as never);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const state = await deleteSlot(
+      initialState,
+      formData({ slotId: "8a6e0804-2bd0-4672-b79d-d97027f9071a", inviteCode: "abcd2345" }),
+    );
+
+    expect(state.error).toMatch(/boom/);
   });
 });

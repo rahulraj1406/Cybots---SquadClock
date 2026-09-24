@@ -1,11 +1,37 @@
 "use client";
 
+import { useActionState } from "react";
 import { deleteSlot } from "@/lib/actions";
 import { formatCountdown, formatLocalDate, formatLocalTime } from "@/lib/time";
 import { buildWhatsappMessage } from "@/lib/whatsapp";
-import type { Member, SlotWithMember } from "@/lib/types";
+import type { ActionState, Member, SlotWithMember } from "@/lib/types";
 import { Card, Eyebrow } from "@/components/ui";
 import { ShareButton } from "@/components/ShareButton";
+
+const initialState: ActionState = { error: null };
+
+function RemoveSlotButton({ slotId, inviteCode }: { slotId: string; inviteCode: string }) {
+  const [state, formAction, pending] = useActionState(deleteSlot, initialState);
+
+  return (
+    <form action={formAction} className="flex flex-col items-end">
+      <input type="hidden" name="slotId" value={slotId} />
+      <input type="hidden" name="inviteCode" value={inviteCode} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="font-mono text-xs uppercase tracking-[1.2px] text-mute hover:text-sunset disabled:opacity-40"
+      >
+        {pending ? "Removing…" : "Remove"}
+      </button>
+      {state.error && (
+        <p aria-live="polite" className="mt-1 max-w-40 text-right text-xs text-sunset">
+          {state.error}
+        </p>
+      )}
+    </form>
+  );
+}
 
 function SlotRow({
   slot,
@@ -53,18 +79,7 @@ function SlotRow({
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <ShareButton message={message} label="Share" />
-        {isMine && (
-          <form action={deleteSlot}>
-            <input type="hidden" name="slotId" value={slot.id} />
-            <input type="hidden" name="inviteCode" value={inviteCode} />
-            <button
-              type="submit"
-              className="font-mono text-xs uppercase tracking-[1.2px] text-mute hover:text-sunset"
-            >
-              Remove
-            </button>
-          </form>
-        )}
+        {isMine && <RemoveSlotButton slotId={slot.id} inviteCode={inviteCode} />}
       </div>
     </div>
   );
