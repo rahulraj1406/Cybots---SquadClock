@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Button, Eyebrow } from "@/components/ui";
+import { Eyebrow } from "@/components/ui";
 
 export default function NotFound() {
   return (
@@ -12,8 +12,11 @@ export default function NotFound() {
         That invite link doesn&rsquo;t match a squad. Double-check the link,
         or start a new one.
       </p>
-      <Link href="/" className="mt-8">
-        <Button variant="primary">Back to SquadClock</Button>
+      <Link
+        href="/"
+        className="mt-8 inline-flex items-center justify-center rounded-pill bg-primary px-4 py-2 text-sm text-on-primary hover:bg-ink-hover"
+      >
+        Back to SquadClock
       </Link>
     </main>
   );
