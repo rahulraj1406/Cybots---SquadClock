@@ -1,4 +1,4 @@
-import { formatLocalDate, formatLocalTime } from "./time";
+import { formatShortRange, formatSlotRange, zoneCity } from "./time";
 import type { Member } from "./types";
 
 export type ShareLine = {
@@ -22,24 +22,19 @@ export function buildWhatsappMessage(input: {
   const owner = lines.find((l) => l.member.display_name === ownerName) ?? lines[0];
 
   const header = owner
-    ? `🎮 ${ownerName} is free ${formatLocalDate(owner.starts_at, owner.member.timezone)} ` +
-      `${formatLocalTime(owner.starts_at, owner.member.timezone)}–${formatLocalTime(
-        owner.ends_at,
-        owner.member.timezone,
-      )}`
+    ? `🎮 ${ownerName} is free ${formatSlotRange(owner.starts_at, owner.ends_at, owner.member.timezone)}` +
+      ` (${zoneCity(owner.member.timezone)} time)`
     : `🎮 ${ownerName} posted a slot`;
 
   const body = lines
     .map(
       (l) =>
-        `${l.member.display_name}: ${formatLocalTime(l.starts_at, l.member.timezone)}–${formatLocalTime(
-          l.ends_at,
-          l.member.timezone,
-        )} (${l.member.timezone})`,
+        `${l.member.display_name}: ${formatShortRange(l.starts_at, l.ends_at, l.member.timezone)}` +
+        ` (${zoneCity(l.member.timezone)})`,
     )
     .join("\n");
 
-  const noteLine = note ? `\n"${note}"` : "";
+  const noteLine = note ? `\n“${note}”` : "";
 
   return `${header}${noteLine}\n\n${body}\n\nJoin the squad: ${inviteUrl}`;
 }
@@ -62,10 +57,8 @@ export function buildOverlapMessage(input: {
   const body = members
     .map(
       (m) =>
-        `${m.display_name}: ${formatLocalDate(starts_at, m.timezone)} ${formatLocalTime(
-          starts_at,
-          m.timezone,
-        )}–${formatLocalTime(ends_at, m.timezone)} (${m.timezone})`,
+        `${m.display_name}: ${formatShortRange(starts_at, ends_at, m.timezone)}` +
+        ` (${zoneCity(m.timezone)})`,
     )
     .join("\n");
 

@@ -106,6 +106,30 @@ export function formatSlotStatus(
   return { live: true, label: `free now · ${remaining} left` };
 }
 
+/** "Kolkata" for "Asia/Kolkata", "Buenos Aires" for ".../Buenos_Aires". */
+export function zoneCity(timezone: string): string {
+  const zone = canonicalTimezone(timezone);
+  if (zone === "UTC" || zone === "Etc/UTC") return "UTC";
+  return zone.split("/").pop()!.replace(/_/g, " ");
+}
+
+/**
+ * "Sun 12:30–2:30 PM": weekday + range without the date, for compact
+ * one-line-per-person lists. Crossing midnight: "Sun 11:00 PM – Mon 1:00 AM".
+ */
+export function formatShortRange(startIso: string, endIso: string, timezone: string): string {
+  const start = DateTime.fromISO(startIso, { zone: "utc" }).setZone(timezone);
+  const end = DateTime.fromISO(endIso, { zone: "utc" }).setZone(timezone);
+
+  if (!start.hasSame(end, "day")) {
+    return `${start.toFormat("ccc h:mm a")} – ${end.toFormat("ccc h:mm a")}`;
+  }
+  if (start.toFormat("a") === end.toFormat("a")) {
+    return `${start.toFormat("ccc h:mm")}–${end.toFormat("h:mm a")}`;
+  }
+  return `${start.toFormat("ccc h:mm a")}–${end.toFormat("h:mm a")}`;
+}
+
 /**
  * "Kolkata · GMT+5:30": a readable city plus the zone's offset at `at`
  * (so Dublin shows GMT+1 in summer and GMT in winter).
@@ -114,7 +138,7 @@ export function formatZoneLabel(timezone: string, at: DateTime = DateTime.utc())
   const zone = canonicalTimezone(timezone);
   if (zone === "UTC" || zone === "Etc/UTC") return "UTC";
 
-  const city = zone.split("/").pop()!.replace(/_/g, " ");
+  const city = zoneCity(zone);
   const offset = at.setZone(zone).offset; // minutes east of UTC
   if (offset === 0) return `${city} · GMT`;
 
