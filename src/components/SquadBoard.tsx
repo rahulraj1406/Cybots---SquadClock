@@ -29,6 +29,21 @@ export function SquadBoard({
 }) {
   const [members, setMembers] = useState(initialMembers);
   const [slots, setSlots] = useState(initialSlots);
+
+  // After a Server Action calls revalidatePath, the page re-renders on
+  // the server and passes fresh initial* props. Adopt them (React's
+  // "adjust state when a prop changes" pattern), so your own new slot
+  // shows up even if the realtime socket is down or reconnecting.
+  const [syncedMembers, setSyncedMembers] = useState(initialMembers);
+  const [syncedSlots, setSyncedSlots] = useState(initialSlots);
+  if (initialMembers !== syncedMembers) {
+    setSyncedMembers(initialMembers);
+    setMembers(initialMembers);
+  }
+  if (initialSlots !== syncedSlots) {
+    setSyncedSlots(initialSlots);
+    setSlots(initialSlots);
+  }
   const [now, setNow] = useState(() => new Date());
   const [inviteCopied, setInviteCopied] = useState(false);
 
