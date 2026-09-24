@@ -70,13 +70,8 @@ export function SquadBoard({
         .channel(`squad-${squadId}`)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "slots", filter: `squad_id=eq.${squadId}` },
+          { event: "INSERT", schema: "public", table: "slots", filter: `squad_id=eq.${squadId}` },
           (payload) => {
-            if (payload.eventType === "DELETE") {
-              setSlots((prev) => prev.filter((s) => s.id !== (payload.old as Slot).id));
-              return;
-            }
-
             const raw = payload.new as Slot;
             const member = membersRef.current.find((m) => m.id === raw.member_id);
             if (!member) return; // member list will catch up on its own event
@@ -93,14 +88,23 @@ export function SquadBoard({
             setSlots((prev) => [...prev.filter((s) => s.id !== hydrated.id), hydrated]);
           },
         )
+        // DELETE events can't be filtered: with RLS on, Realtime sends
+        // only the deleted row's primary key, so a squad_id filter never
+        // matches. Listen unfiltered and drop by id; an id from another
+        // squad simply matches nothing here.
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "slots" },
+          (payload) => {
+            const id = (payload.old as Partial<Slot>).id;
+            if (id) setSlots((prev) => prev.filter((s) => s.id !== id));
+          },
+        )
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "members", filter: `squad_id=eq.${squadId}` },
           (payload) => {
-            if (payload.eventType === "DELETE") {
-              setMembers((prev) => prev.filter((m) => m.id !== (payload.old as Member).id));
-              return;
-            }
+            if (payload.eventType === "DELETE") return; // members are never deleted from the app
             const raw = payload.new as Member;
             setMembers((prev) => {
               const withoutThis = prev.filter((m) => m.id !== raw.id);
