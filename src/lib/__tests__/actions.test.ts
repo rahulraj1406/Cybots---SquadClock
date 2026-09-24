@@ -119,7 +119,8 @@ describe("createSquad", () => {
 });
 
 describe("joinSquad", () => {
-  const upsertMock = vi.fn();
+  const updateEqUserMock = vi.fn();
+  const updateMock = vi.fn(() => ({ eq: () => ({ eq: updateEqUserMock }) }));
   const validJoin = {
     squadId: "8a6e0804-2bd0-4672-b79d-d97027f9071a",
     inviteCode: "abcd2345",
@@ -128,15 +129,18 @@ describe("joinSquad", () => {
   };
 
   beforeEach(() => {
-    upsertMock.mockReset().mockResolvedValue({ error: null });
-    fromMock.mockImplementation(() => ({ insert: insertMock, upsert: upsertMock }) as never);
+    insertMock.mockResolvedValue({ error: null });
+    updateMock.mockClear();
+    updateEqUserMock.mockReset().mockResolvedValue({ error: null });
+    fromMock.mockImplementation(() => ({ insert: insertMock, update: updateMock }) as never);
   });
 
   it("adds the device as a member and redirects to the board", async () => {
     await expect(joinSquad(initialState, formData(validJoin))).rejects.toThrow(
       "REDIRECT:/s/abcd2345",
     );
-    expect(upsertMock.mock.calls[0][0]).toMatchObject({
+    expect(fromMock).toHaveBeenCalledWith("members");
+    expect(insertMock.mock.calls[0][0]).toMatchObject({
       squad_id: validJoin.squadId,
       user_id: "u1",
       display_name: "Arjun",
@@ -149,17 +153,32 @@ describe("joinSquad", () => {
     signInAnonymouslyMock.mockResolvedValue({ data: { user: { id: "anon" } }, error: null });
 
     await expect(joinSquad(initialState, formData(validJoin))).rejects.toThrow(/^REDIRECT:/);
-    expect(upsertMock.mock.calls[0][0].user_id).toBe("anon");
+    expect(insertMock.mock.calls[0][0].user_id).toBe("anon");
   });
 
   it("rejects a fixed-offset time zone before touching the database", async () => {
     const state = await joinSquad(initialState, formData({ ...validJoin, timezone: "+05:30" }));
     expect(state.error).toMatch(/valid time zone/);
-    expect(upsertMock).not.toHaveBeenCalled();
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  // Regression: upsert (INSERT ... ON CONFLICT DO UPDATE) is checked
+  // against the members SELECT policy too, which a not-yet-member fails.
+  it("never uses upsert, which RLS rejects for a not-yet-member", async () => {
+    await expect(joinSquad(initialState, formData(validJoin))).rejects.toThrow(/^REDIRECT:/);
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("updates name and time zone when the device is already a member", async () => {
+    insertMock.mockResolvedValue({ error: { code: "23505", message: "duplicate key" } });
+
+    await expect(joinSquad(initialState, formData(validJoin))).rejects.toThrow(/^REDIRECT:/);
+    expect(updateMock).toHaveBeenCalledWith({ display_name: "Arjun", timezone: "Asia/Kolkata" });
   });
 
   it("returns the database error as form state", async () => {
-    upsertMock.mockResolvedValue({ error: { message: "permission denied" } });
+    insertMock.mockResolvedValue({ error: { message: "permission denied" } });
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     const state = await joinSquad(initialState, formData(validJoin));

@@ -9,6 +9,10 @@ import { getOrCreateUser } from "@/lib/supabase/auth";
 import { absoluteSlotToUtc, isValidTimezone, relativeSlotToUtc } from "@/lib/time";
 import type { ActionState } from "@/lib/types";
 
+/** Postgres SQLSTATE codes we branch on. */
+const UNIQUE_VIOLATION = "23505";
+const RLS_VIOLATION = "42501";
+
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong. Please try again.";
 }
@@ -98,18 +102,33 @@ export async function joinSquad(
     return { error: errorMessage(e) };
   }
 
-  const { error } = await supabase.from("members").upsert(
-    {
-      squad_id: parsed.data.squadId,
-      user_id: user.id,
-      display_name: parsed.data.displayName,
-      timezone: parsed.data.timezone,
-    },
-    { onConflict: "squad_id,user_id" },
-  );
+  const profile = {
+    display_name: parsed.data.displayName,
+    timezone: parsed.data.timezone,
+  };
+
+  // Plain insert, not upsert. INSERT ... ON CONFLICT DO UPDATE makes
+  // Postgres also check the new row against the members SELECT policy,
+  // which only shows rows of squads you're already in, and you aren't
+  // until this insert lands, so an upsert here always failed RLS
+  // ("new row violates row-level security policy for table members").
+  const { error: insertError } = await supabase
+    .from("members")
+    .insert({ squad_id: parsed.data.squadId, user_id: user.id, ...profile });
+
+  let error = insertError;
+  if (insertError?.code === UNIQUE_VIOLATION) {
+    // Already a member of this squad on this device: treat re-joining
+    // as "update my name / time zone".
+    ({ error } = await supabase
+      .from("members")
+      .update(profile)
+      .eq("squad_id", parsed.data.squadId)
+      .eq("user_id", user.id));
+  }
 
   if (error) {
-    console.error("joinSquad: upsert failed", error);
+    console.error("joinSquad: insert failed", error);
     return { error: `Couldn't join the squad: ${error.message}` };
   }
 
@@ -148,9 +167,6 @@ const createSlotSchema = z.discriminatedUnion("mode", [
   relativeSlotSchema,
   absoluteSlotSchema,
 ]);
-
-/** Postgres error code for "new row violates row-level security policy". */
-const RLS_VIOLATION = "42501";
 
 export async function createSlot(
   _prev: ActionState,
