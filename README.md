@@ -57,13 +57,33 @@ with anonymous sign-ins already on.
 ## Tests
 
 ```bash
-npm test                  # unit tests: time zones, overlaps, share messages, actions
-npm run test:integration  # RLS, auth and realtime against a local Supabase (needs `npx supabase start`)
+npm test                  # unit tests: time zones, overlaps, share and push messages, actions
+npm run test:integration  # RLS, auth, realtime and push delivery against a local Supabase
+npm run test:e2e          # browsers in 3 time zones using the app together (after `npm run build`)
 ```
 
-CI runs lint, unit tests and a production build, plus the integration
-suite on a fresh Supabase stack, where it also re-applies the schema and
-runs `verify.sql`.
+The integration and e2e suites need `npx supabase start` first. CI runs
+everything on a fresh Supabase stack, and there it also re-applies the
+schema and runs `verify.sql`.
+
+## Push notifications (optional)
+
+Friends get a ping when someone is **free now**, or when a new slot makes
+the **whole squad** free at the same time, worded in their own time zone.
+It stays off, and the board doesn't offer it, until all four of these are
+set in Vercel (Project Settings → Environment Variables) and the app is
+redeployed:
+
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | `publicKey` from `npx web-push generate-vapid-keys` |
+| `VAPID_PRIVATE_KEY` | `privateKey` from the same command |
+| `VAPID_SUBJECT` | `mailto:` plus your email |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` (server-only, never `NEXT_PUBLIC_`) |
+
+Then each person taps **Turn on notifications** on the squad board. On
+iPhone (iOS 16.4+) this only works from the installed app: Share → **Add
+to Home Screen**, then open SquadClock from the home screen.
 
 ## Deploy
 
@@ -83,3 +103,5 @@ daily cron in [`vercel.json`](vercel.json) keeps the project awake.
 | `infinite recursion detected in policy for relation "members"` | Schema from before the recursion fix | Re-run `0001_init.sql` (or `0002_fix_members_rls_recursion.sql`) |
 | Friends' slots only show after a refresh | Realtime isn't publishing the tables | Re-run `0001_init.sql`, then check `verify.sql` |
 | Every page errors on Vercel | Env vars missing or misspelled | Set both `NEXT_PUBLIC_SUPABASE_*` vars and redeploy |
+| No "Turn on notifications" button | Push isn't configured | Set all four push variables above and redeploy |
+| iPhone says to add to home screen | iOS only allows push for installed web apps | Share → Add to Home Screen, then open it from there |
