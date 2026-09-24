@@ -37,3 +37,42 @@ jobs:
         # ever starts requiring real credentials, that's a sign a page
         # that should be static/dynamic-safe became a hard dependency.
         run: npm run build
+
+  integration:
+    # RLS, auth and realtime against a real Supabase stack. The bugs that
+    # broke production (no session under RLS, a recursive policy, upsert
+    # vs RLS, unauthenticated realtime) all live in this layer.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase (db, auth, rest, realtime)
+        run: supabase start -x studio,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,postgres-meta,mailpit
+
+      - name: Schema file is safe to re-run
+        run: |
+          psql "$(supabase status -o env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')" \
+            -v ON_ERROR_STOP=1 -q -f supabase/migrations/0001_init.sql
+
+      - name: Integration tests
+        run: |
+          eval "$(supabase status -o env | sed 's/^/export /')"
+          SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" npm run test:integration
+
+      - name: Setup check (supabase/verify.sql) reports all green
+        run: |
+          DB_URL="$(supabase status -o env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/verify.sql
+          failing="$(psql "$DB_URL" -At -F '|' -f supabase/verify.sql | grep '|f|' || true)"
+          if [ -n "$failing" ]; then echo "::error::verify.sql failed: $failing"; exit 1; fi
