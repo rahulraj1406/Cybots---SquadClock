@@ -39,9 +39,10 @@ jobs:
         run: npm run build
 
   integration:
-    # RLS, auth and realtime against a real Supabase stack. The bugs that
-    # broke production (no session under RLS, a recursive policy, upsert
-    # vs RLS, unauthenticated realtime) all live in this layer.
+    # RLS, auth, realtime and end-to-end browser tests against a real
+    # Supabase stack. The bugs that broke production (no session under
+    # RLS, a recursive policy, upsert vs RLS, unauthenticated realtime)
+    # all live in this layer.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,3 +77,24 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/verify.sql
           failing="$(psql "$DB_URL" -At -F '|' -f supabase/verify.sql | grep '|f|' || true)"
           if [ -n "$failing" ]; then echo "::error::verify.sql failed: $failing"; exit 1; fi
+
+      - name: Build against the local stack
+        run: |
+          eval "$(supabase status -o env | sed 's/^/export /')"
+          NEXT_PUBLIC_SUPABASE_URL="$API_URL" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY" npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: |
+          eval "$(supabase status -o env | sed 's/^/export /')"
+          NEXT_PUBLIC_SUPABASE_URL="$API_URL" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY" npm run test:e2e
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
