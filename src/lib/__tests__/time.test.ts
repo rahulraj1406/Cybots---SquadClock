@@ -96,6 +96,14 @@ describe("isValidTimezone / isSlotExpired", () => {
     expect(isValidTimezone("not/a/zone")).toBe(false);
   });
 
+  it("rejects fixed offsets, which can't follow daylight saving", () => {
+    expect(isValidTimezone("+05:30")).toBe(false);
+    expect(isValidTimezone("-04:00")).toBe(false);
+    expect(isValidTimezone("")).toBe(false);
+    expect(isValidTimezone("UTC")).toBe(true);
+    expect(isValidTimezone("America/Toronto")).toBe(true);
+  });
+
   it("flags a slot as expired once its end has passed", () => {
     const now = DateTime.fromISO("2026-03-01T00:00:00Z", { zone: "utc" });
     expect(isSlotExpired("2026-02-28T00:00:00Z", now)).toBe(true);

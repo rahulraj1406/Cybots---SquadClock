@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime, IANAZone } from "luxon";
 
 /**
  * All slot math is done in UTC on the server / in storage. These helpers
@@ -15,9 +15,16 @@ export function detectTimezone(): string {
   }
 }
 
+/**
+ * True only for IANA zone names ("Asia/Kolkata", "UTC"). Fixed offsets
+ * like "+05:30" are rejected even though Luxon/Intl accept them: an
+ * offset can't follow daylight-saving changes, which is the whole reason
+ * we store zone names (docs/PROJECT.md section 5).
+ */
 export function isValidTimezone(tz: string): boolean {
+  if (!/^[A-Za-z]/.test(tz)) return false;
   try {
-    return DateTime.local().setZone(tz).isValid;
+    return IANAZone.isValidZone(tz);
   } catch {
     return false;
   }
