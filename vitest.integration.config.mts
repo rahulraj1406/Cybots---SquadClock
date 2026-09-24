@@ -3,7 +3,8 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 
 /**
- * Fills SUPABASE_URL / SUPABASE_ANON_KEY from a running local stack
+ * Fills SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY
+ * from a running local stack
  * (`npx supabase start`) unless they're already set, e.g. in CI.
  */
 function localSupabaseEnv(): Record<string, string> {
@@ -12,7 +13,11 @@ function localSupabaseEnv(): Record<string, string> {
     const status = JSON.parse(
       execSync("npx supabase status -o json", { stdio: ["ignore", "pipe", "ignore"] }).toString(),
     );
-    return { SUPABASE_URL: status.API_URL, SUPABASE_ANON_KEY: status.ANON_KEY };
+    return {
+      SUPABASE_URL: status.API_URL,
+      SUPABASE_ANON_KEY: status.ANON_KEY,
+      SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+    };
   } catch {
     return {}; // rls.test.ts explains how to start the stack
   }
