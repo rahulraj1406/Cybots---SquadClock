@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { findOverlaps, fullOverlaps, partialOverlaps } from "@/lib/overlap";
 import type { Member, Slot, SlotWithMember } from "@/lib/types";
@@ -50,54 +51,73 @@ export function SquadBoard({
 
   useEffect(() => {
     const supabase = createClient();
-    const channel = supabase
-      .channel(`squad-${squadId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "slots", filter: `squad_id=eq.${squadId}` },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            setSlots((prev) => prev.filter((s) => s.id !== (payload.old as Slot).id));
-            return;
-          }
+    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
 
-          const raw = payload.new as Slot;
-          const member = membersRef.current.find((m) => m.id === raw.member_id);
-          if (!member) return; // member list will catch up on its own event
+    async function subscribe() {
+      // Realtime applies the table's RLS policies to each event using the
+      // JWT the channel joined with. The browser client loads its session
+      // from the auth cookie asynchronously, and without this await the
+      // channel joined before that finished, i.e. as the anonymous role,
+      // so RLS silently filtered out every slot/member event.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session) supabase.realtime.setAuth(session.access_token);
 
-          const hydrated: SlotWithMember = {
-            ...raw,
-            member: {
-              id: member.id,
-              display_name: member.display_name,
-              timezone: member.timezone,
-            },
-          };
+      channel = supabase
+        .channel(`squad-${squadId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "slots", filter: `squad_id=eq.${squadId}` },
+          (payload) => {
+            if (payload.eventType === "DELETE") {
+              setSlots((prev) => prev.filter((s) => s.id !== (payload.old as Slot).id));
+              return;
+            }
 
-          setSlots((prev) => [...prev.filter((s) => s.id !== hydrated.id), hydrated]);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "members", filter: `squad_id=eq.${squadId}` },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            setMembers((prev) => prev.filter((m) => m.id !== (payload.old as Member).id));
-            return;
-          }
-          const raw = payload.new as Member;
-          setMembers((prev) => {
-            const withoutThis = prev.filter((m) => m.id !== raw.id);
-            return [...withoutThis, raw].sort(
-              (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
-            );
-          });
-        },
-      )
-      .subscribe();
+            const raw = payload.new as Slot;
+            const member = membersRef.current.find((m) => m.id === raw.member_id);
+            if (!member) return; // member list will catch up on its own event
+
+            const hydrated: SlotWithMember = {
+              ...raw,
+              member: {
+                id: member.id,
+                display_name: member.display_name,
+                timezone: member.timezone,
+              },
+            };
+
+            setSlots((prev) => [...prev.filter((s) => s.id !== hydrated.id), hydrated]);
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "members", filter: `squad_id=eq.${squadId}` },
+          (payload) => {
+            if (payload.eventType === "DELETE") {
+              setMembers((prev) => prev.filter((m) => m.id !== (payload.old as Member).id));
+              return;
+            }
+            const raw = payload.new as Member;
+            setMembers((prev) => {
+              const withoutThis = prev.filter((m) => m.id !== raw.id);
+              return [...withoutThis, raw].sort(
+                (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
+              );
+            });
+          },
+        )
+        .subscribe();
+    }
+
+    void subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [squadId]);
 
