@@ -2,7 +2,12 @@
 
 import { useActionState } from "react";
 import { deleteSlot } from "@/lib/actions";
-import { formatCountdown, formatLocalDate, formatLocalTime } from "@/lib/time";
+import {
+  canonicalTimezone,
+  formatSlotRange,
+  formatSlotStatus,
+  formatZoneLabel,
+} from "@/lib/time";
 import { buildWhatsappMessage } from "@/lib/whatsapp";
 import type { ActionState, Member, SlotWithMember } from "@/lib/types";
 import { Card, Eyebrow } from "@/components/ui";
@@ -60,22 +65,32 @@ function SlotRow({
     })),
   });
 
+  const status = formatSlotStatus(slot.starts_at, slot.ends_at);
+  // Only worth a second line when the owner's wall clock differs from ours.
+  const showTheirTime =
+    canonicalTimezone(slot.member.timezone) !== canonicalTimezone(viewerTimezone);
+
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-hairline py-3 last:border-0">
-      <div>
-        <p className="text-sm text-ink">
-          {formatLocalDate(slot.starts_at, viewerTimezone)}{" "}
-          {formatLocalTime(slot.starts_at, viewerTimezone)}–
-          {formatLocalTime(slot.ends_at, viewerTimezone)}
-          <span className="ml-2 font-mono text-xs uppercase tracking-[1.2px] text-mute">
-            {formatCountdown(slot.starts_at)}
-          </span>
+    <div className="flex flex-col gap-3 border-b border-hairline py-3 last:border-0 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm text-ink">{formatSlotRange(slot.starts_at, slot.ends_at, viewerTimezone)}</p>
+        <p
+          suppressHydrationWarning
+          className={`mt-1 flex items-center gap-2 font-mono text-xs uppercase tracking-[1.2px] ${
+            status.live ? "text-live" : "text-mute"
+          }`}
+        >
+          {status.live && <span className="h-1.5 w-1.5 rounded-full bg-live" aria-hidden />}
+          {status.label}
         </p>
-        <p className="mt-1 text-xs text-mute">
-          {formatLocalTime(slot.starts_at, slot.member.timezone)}–
-          {formatLocalTime(slot.ends_at, slot.member.timezone)} their time
-          {slot.note ? ` · "${slot.note}"` : ""}
-        </p>
+        {(showTheirTime || slot.note) && (
+          <p className="mt-1 text-xs text-mute">
+            {showTheirTime &&
+              `${formatSlotRange(slot.starts_at, slot.ends_at, slot.member.timezone)} their time`}
+            {showTheirTime && slot.note ? " · " : ""}
+            {slot.note ? `“${slot.note}”` : ""}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <ShareButton message={message} label="Share" />
@@ -114,7 +129,9 @@ export function MemberSlots({
                 {member.display_name}
                 {member.id === currentMemberId ? " (you)" : ""}
               </Eyebrow>
-              <span className="text-xs text-mute">{member.timezone}</span>
+              <span className="text-xs text-mute" title={member.timezone} suppressHydrationWarning>
+                {formatZoneLabel(member.timezone)}
+              </span>
             </div>
             {memberSlots.length === 0 ? (
               <p className="mt-3 text-sm text-mute">No upcoming slots</p>

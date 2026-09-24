@@ -1,6 +1,6 @@
 "use client";
 
-import { formatCountdown, formatLocalDate, formatLocalTime } from "@/lib/time";
+import { formatSlotRange, formatSlotStatus } from "@/lib/time";
 import { buildOverlapMessage } from "@/lib/whatsapp";
 import type { Member, OverlapWindow } from "@/lib/types";
 import { Card, Eyebrow } from "@/components/ui";
@@ -23,6 +23,8 @@ function OverlapRow({
 }) {
   const involved = members.filter((m) => window.memberIds.includes(m.id));
   const names = involved.map((m) => m.display_name).join(", ");
+
+  const status = formatSlotStatus(window.starts_at, window.ends_at);
 
   const message = buildOverlapMessage({
     starts_at: window.starts_at,
@@ -50,13 +52,18 @@ function OverlapRow({
                   : "h-2 w-2 rounded-full bg-mute"
               }
             />
-            {full ? "Everyone" : names} free{" "}
-            {formatLocalDate(window.starts_at, viewerTimezone)}{" "}
-            {formatLocalTime(window.starts_at, viewerTimezone)}–
-            {formatLocalTime(window.ends_at, viewerTimezone)}
+            {full ? "Everyone" : names} free
           </p>
-          <p className="mt-1 font-mono text-xs uppercase tracking-[1.2px] text-mute">
-            {formatCountdown(window.starts_at)} · your time
+          <p className="mt-1 text-sm text-body">
+            {formatSlotRange(window.starts_at, window.ends_at, viewerTimezone)}
+          </p>
+          <p
+            suppressHydrationWarning
+            className={`mt-1 font-mono text-xs uppercase tracking-[1.2px] ${
+              status.live ? "text-live" : "text-mute"
+            }`}
+          >
+            {status.label} · your time
           </p>
         </div>
         <ShareButton message={message} label="Share" />
